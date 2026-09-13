@@ -11,6 +11,7 @@ import { envValidationSchema } from './config/env.validation';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule, REDIS_CLIENT } from './redis/redis.module';
 import { StorageModule } from './common/storage/storage.module';
+import { SmsModule } from './common/sms/sms.module';
 import { CacheModule } from './common/cache/cache.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
@@ -46,7 +47,9 @@ import { ResponseEnvelopeInterceptor } from './common/interceptors/response-enve
           paths: [
             'req.headers.authorization',
             'req.body.password',
+            'req.body.newPassword',
             'req.body.refreshToken',
+            'req.body.code',
             'res.headers["set-cookie"]',
           ],
           censor: '[redacted]',
@@ -56,6 +59,7 @@ import { ResponseEnvelopeInterceptor } from './common/interceptors/response-enve
     }),
     RedisModule,
     StorageModule,
+    SmsModule,
     CacheModule,
     BullModule.forRootAsync({
       imports: [RedisModule],

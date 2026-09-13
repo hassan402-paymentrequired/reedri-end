@@ -15,6 +15,8 @@ export enum DomainEvent {
   TripCompleted = 'trip.completed',
   RideRequestCancelled = 'ride-request.cancelled',
   OfferExpired = 'offer.expired',
+  DriverLocationUpdated = 'driver.location.updated',
+  DriverOnlineStatusChanged = 'driver.online-status.changed',
 }
 
 export class RideRequestCreatedEvent {
@@ -56,5 +58,22 @@ export class OfferExpiredEvent {
     public readonly rideRequestId: string,
     public readonly offerId: string,
     public readonly driverUserId: string,
+  ) {}
+}
+
+export class DriverLocationUpdatedEvent {
+  constructor(
+    public readonly driverUserId: string,
+    public readonly lat: number,
+    public readonly lng: number,
+  ) {}
+}
+
+export class DriverOnlineStatusChangedEvent {
+  constructor(
+    public readonly driverUserId: string,
+    public readonly isOnline: boolean,
+    public readonly lat: number | null,
+    public readonly lng: number | null,
   ) {}
 }

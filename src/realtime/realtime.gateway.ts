@@ -9,6 +9,7 @@ import {
   WebSocketServer,
 } from '@nestjs/websockets';
 import { JwtService } from '@nestjs/jwt';
+import { ConfigService } from '@nestjs/config';
 import { OnEvent } from '@nestjs/event-emitter';
 import { Server, Socket } from 'socket.io';
 import { Role } from '@prisma/client';
@@ -17,6 +18,8 @@ import { DriversService } from '../drivers/drivers.service';
 import { OffersService } from '../offers/offers.service';
 import {
   DomainEvent,
+  DriverLocationUpdatedEvent,
+  DriverOnlineStatusChangedEvent,
   OfferAcceptedEvent,
   OfferExpiredEvent,
   OfferSubmittedEvent,
@@ -28,8 +31,10 @@ import {
   SubmitOfferPayload,
   AcceptOfferPayload,
   LocationUpdatePayload,
+  TrackNearbyPayload,
 } from './dto/ws-payloads';
 import { WsRateLimiter } from './ws-rate-limiter';
+import { haversineMeters } from '../common/geo/haversine';
 
 interface AuthenticatedSocket extends Socket {
   data: { userId: string; role: Role };
@@ -63,17 +68,31 @@ export class RealtimeGateway
   // Socket.io with a Redis adapter).
   private readonly activeTripRiderByDriver = new Map<string, string>();
 
+  // In-memory map of riderUserId -> the map viewport they last subscribed
+  // with, for the "nearby drivers" live map (as opposed to the 1:1 trip
+  // relay above). Every DriverLocationUpdated/DriverOnlineStatusChanged event
+  // is checked against every entry here — fine at this scale, but it's an
+  // O(subscribed riders) scan per driver ping; move to a spatial index (or
+  // shard by geohash) if the rider count on this ever gets large. Same
+  // single-process caveat as activeTripRiderByDriver.
+  private readonly riderTrackSubscriptions = new Map<
+    string,
+    { lat: number; lng: number; radiusMeters: number }
+  >();
+
   // Per-user-per-event limits — WS messages sit outside ThrottlerGuard's
   // reach (it only instruments HTTP), so without this a client can flood
   // offers or location pings with no backpressure at all.
   private readonly offerSubmitLimiter = new WsRateLimiter(5, 5000);
   private readonly offerAcceptLimiter = new WsRateLimiter(5, 5000);
   private readonly locationUpdateLimiter = new WsRateLimiter(3, 1000);
+  private readonly trackSubscribeLimiter = new WsRateLimiter(5, 5000);
 
   constructor(
     private readonly jwtService: JwtService,
     private readonly driversService: DriversService,
     private readonly offersService: OffersService,
+    private readonly config: ConfigService,
   ) {}
 
   async handleConnection(socket: Socket): Promise<void> {
@@ -98,6 +117,8 @@ export class RealtimeGateway
     this.offerSubmitLimiter.clear(userId);
     this.offerAcceptLimiter.clear(userId);
     this.locationUpdateLimiter.clear(userId);
+    this.trackSubscribeLimiter.clear(userId);
+    this.riderTrackSubscriptions.delete(userId);
 
     if (role !== Role.DRIVER) return;
 
@@ -180,6 +201,68 @@ export class RealtimeGateway
       }
     } catch (err) {
       socket.emit('error', { message: (err as Error).message });
+    }
+  }
+
+  /**
+   * A rider "watching the map" subscribes with their viewport center; every
+   * subsequent driver location/online-status change within radiusKm of that
+   * point is pushed to them as `driver:location` / `driver:offline` until
+   * they unsubscribe, disconnect, or move the map (re-subscribing replaces
+   * the previous viewport). Call this again whenever the rider pans/zooms
+   * meaningfully. Initial pins for the map should come from
+   * `GET /matching/nearby-drivers` — this only carries live deltas.
+   */
+  @UsePipes(new ValidationPipe({ transform: true }))
+  @SubscribeMessage('rider:track:subscribe')
+  onTrackSubscribe(
+    @ConnectedSocket() socket: AuthenticatedSocket,
+    @MessageBody() body: TrackNearbyPayload,
+  ) {
+    if (!this.trackSubscribeLimiter.consume(socket.data.userId)) {
+      socket.emit('error', { message: 'Too many requests — slow down' });
+      return;
+    }
+    const radiusKm =
+      body.radiusKm ?? this.config.get<number>('RIDE_MATCH_RADIUS_KM', 5);
+    this.riderTrackSubscriptions.set(socket.data.userId, {
+      lat: body.lat,
+      lng: body.lng,
+      radiusMeters: radiusKm * 1000,
+    });
+  }
+
+  @SubscribeMessage('rider:track:unsubscribe')
+  onTrackUnsubscribe(@ConnectedSocket() socket: AuthenticatedSocket) {
+    this.riderTrackSubscriptions.delete(socket.data.userId);
+  }
+
+  @OnEvent(DomainEvent.DriverLocationUpdated)
+  handleDriverLocationUpdated(event: DriverLocationUpdatedEvent) {
+    for (const [riderId, sub] of this.riderTrackSubscriptions) {
+      const distance = haversineMeters(sub.lat, sub.lng, event.lat, event.lng);
+      if (distance <= sub.radiusMeters) {
+        this.server.to(userRoom(riderId)).emit('driver:location', {
+          driverId: event.driverUserId,
+          lat: event.lat,
+          lng: event.lng,
+        });
+      }
+    }
+  }
+
+  @OnEvent(DomainEvent.DriverOnlineStatusChanged)
+  handleDriverOnlineStatusChanged(event: DriverOnlineStatusChangedEvent) {
+    // Only going offline needs pushing here — a driver coming online has no
+    // pin to show yet until their first location update arrives.
+    if (event.isOnline || event.lat === null || event.lng === null) return;
+    for (const [riderId, sub] of this.riderTrackSubscriptions) {
+      const distance = haversineMeters(sub.lat, sub.lng, event.lat, event.lng);
+      if (distance <= sub.radiusMeters) {
+        this.server
+          .to(userRoom(riderId))
+          .emit('driver:offline', { driverId: event.driverUserId });
+      }
     }
   }
 

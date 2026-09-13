@@ -5,9 +5,15 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../prisma/prisma.service';
 import { OffersService } from '../offers/offers.service';
 import { CacheService } from '../common/cache/cache.service';
+import {
+  DomainEvent,
+  DriverLocationUpdatedEvent,
+  DriverOnlineStatusChangedEvent,
+} from '../common/events/domain-events';
 import {
   DriverDocumentsService,
   REQUIRED_DOCUMENT_TYPES,
@@ -39,6 +45,7 @@ export class DriversService {
     private readonly offersService: OffersService,
     private readonly driverDocumentsService: DriverDocumentsService,
     private readonly cache: CacheService,
+    private readonly events: EventEmitter2,
   ) {}
 
   createProfile(
@@ -97,6 +104,15 @@ export class DriversService {
       where: { userId },
       data: { isOnline },
     });
+    this.events.emit(
+      DomainEvent.DriverOnlineStatusChanged,
+      new DriverOnlineStatusChangedEvent(
+        userId,
+        isOnline,
+        updated.currentLat,
+        updated.currentLng,
+      ),
+    );
     return DriverStatusResponseDto.from(updated);
   }
 
@@ -109,6 +125,13 @@ export class DriversService {
       where: { userId },
       data: { currentLat: lat, currentLng: lng, locationUpdatedAt: new Date() },
     });
+    // Powers the rider-facing live map (see RealtimeGateway's
+    // rider:track:subscribe) — fires whether the update came in over the WS
+    // event or this REST fallback, so both paths keep the map current.
+    this.events.emit(
+      DomainEvent.DriverLocationUpdated,
+      new DriverLocationUpdatedEvent(userId, lat, lng),
+    );
     return DriverLocationResponseDto.from(updated);
   }
 
@@ -120,10 +143,19 @@ export class DriversService {
   async goOffline(userId: string): Promise<void> {
     const profile = await this.findIdentityByUserId(userId);
     if (!profile) return;
-    await this.prisma.driverProfile.update({
+    const updated = await this.prisma.driverProfile.update({
       where: { userId },
       data: { isOnline: false },
     });
+    this.events.emit(
+      DomainEvent.DriverOnlineStatusChanged,
+      new DriverOnlineStatusChangedEvent(
+        userId,
+        false,
+        updated.currentLat,
+        updated.currentLng,
+      ),
+    );
     await this.offersService.scheduleDriverOfferExpiry(profile.id);
   }
 

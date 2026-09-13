@@ -4,17 +4,25 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DriverDocumentType } from '@prisma/client';
+import { EventEmitter2 } from '@nestjs/event-emitter';
 import { DriversService } from './drivers.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { OffersService } from '../offers/offers.service';
 import { DriverDocumentsService } from './driver-documents.service';
 import { CacheService } from '../common/cache/cache.service';
+import {
+  DomainEvent,
+  DriverLocationUpdatedEvent,
+  DriverOnlineStatusChangedEvent,
+} from '../common/events/domain-events';
 
 describe('DriversService', () => {
   const profile = {
     id: 'driver-profile-1',
     userId: 'driver-user-1',
     plateNumber: 'LAG-1',
+    currentLat: 6.5,
+    currentLng: 3.4,
   };
 
   function buildService(missingTypes: DriverDocumentType[] = []) {
@@ -44,17 +52,21 @@ describe('DriversService', () => {
       del: jest.fn().mockResolvedValue(undefined),
     } as unknown as jest.Mocked<CacheService>;
 
+    const events = { emit: jest.fn() } as unknown as jest.Mocked<EventEmitter2>;
+
     return {
       service: new DriversService(
         prisma,
         offersService,
         driverDocumentsService,
         cache,
+        events,
       ),
       prisma,
       offersService,
       driverDocumentsService,
       cache,
+      events,
     };
   }
 
@@ -91,6 +103,37 @@ describe('DriversService', () => {
       await service.setOnlineStatus('driver-user-1', true);
       expect(prisma.driverProfile.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: { isOnline: true } }),
+      );
+    });
+
+    it('emits DriverOnlineStatusChanged with the profile location', async () => {
+      const { service, events } = buildService([]);
+      await service.setOnlineStatus('driver-user-1', true);
+      expect(events.emit).toHaveBeenCalledWith(
+        DomainEvent.DriverOnlineStatusChanged,
+        new DriverOnlineStatusChangedEvent('driver-user-1', true, 6.5, 3.4),
+      );
+    });
+  });
+
+  describe('updateLocation', () => {
+    it('emits DriverLocationUpdated so the live map can pick it up', async () => {
+      const { service, events } = buildService();
+      await service.updateLocation('driver-user-1', 6.6, 3.5);
+      expect(events.emit).toHaveBeenCalledWith(
+        DomainEvent.DriverLocationUpdated,
+        new DriverLocationUpdatedEvent('driver-user-1', 6.6, 3.5),
+      );
+    });
+  });
+
+  describe('goOffline', () => {
+    it('emits DriverOnlineStatusChanged(false) with the last known location', async () => {
+      const { service, events } = buildService();
+      await service.goOffline('driver-user-1');
+      expect(events.emit).toHaveBeenCalledWith(
+        DomainEvent.DriverOnlineStatusChanged,
+        new DriverOnlineStatusChangedEvent('driver-user-1', false, 6.5, 3.4),
       );
     });
   });

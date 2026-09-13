@@ -65,9 +65,10 @@ model User {
   rideRequests    RideRequest[]   @relation("RiderRideRequests")
   tripsAsRider    Trip[]          @relation("RiderTrips")
   tripsAsDriver   Trip[]          @relation("DriverTrips")
-  ratingsGiven    Rating[]        @relation("RatingsFrom")
-  ratingsReceived Rating[]        @relation("RatingsTo")
-  refreshTokens   RefreshToken[]
+  ratingsGiven        Rating[]              @relation("RatingsFrom")
+  ratingsReceived     Rating[]              @relation("RatingsTo")
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
 
   @@map("users")
 }
@@ -84,6 +85,23 @@ model RefreshToken {
 
   @@index([userId])
   @@map("refresh_tokens")
+}
+
+// One-time SMS code for the forgot-password flow. A new request revokes any
+// still-unused code for the same user (see AuthService.forgotPassword), so
+// at most one row per user is ever valid at a time.
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  codeHash  String    @map("code_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("password_reset_tokens")
 }
 
 model DriverProfile {

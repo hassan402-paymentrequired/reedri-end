@@ -10,6 +10,7 @@ export const envValidationSchema = Joi.object({
   JWT_SECRET: Joi.string().min(16).required(),
   JWT_ACCESS_EXPIRES_IN: Joi.string().default('15m'),
   JWT_REFRESH_EXPIRES_IN: Joi.string().default('30d'),
+  PASSWORD_RESET_CODE_EXPIRES_IN: Joi.string().default('15m'),
   RIDE_MATCH_RADIUS_KM: Joi.number().positive().default(5),
   OFFER_EXPIRY_SECONDS: Joi.number().positive().default(60),
   // Comma-separated list of allowed origins. Unset -> '*' (fine for local

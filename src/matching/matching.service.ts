@@ -8,6 +8,16 @@ export interface NearbyDriver {
   distanceMeters: number;
 }
 
+export interface NearbyDriverLocation {
+  driverId: string;
+  userId: string;
+  lat: number;
+  lng: number;
+  vehicleMake: string;
+  vehicleModel: string;
+  distanceMeters: number;
+}
+
 @Injectable()
 export class MatchingService {
   constructor(
@@ -32,6 +42,38 @@ export class MatchingService {
       SELECT
         dp.id AS "driverId",
         dp.user_id AS "userId",
+        ST_Distance(dp.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) AS "distanceMeters"
+      FROM driver_profiles dp
+      WHERE dp.is_online = true
+        AND dp.location IS NOT NULL
+        AND ST_DWithin(dp.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography, ${radiusMeters})
+      ORDER BY dp.location <-> ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography
+      LIMIT 50;
+    `;
+  }
+
+  /**
+   * Same radius query as findNearbyDrivers, but for the rider-facing live
+   * map (GET /matching/nearby-drivers): includes coordinates and vehicle
+   * info for rendering pins, kept separate so callers doing ride matching
+   * aren't affected by this endpoint's shape.
+   */
+  async findNearbyDriverLocations(
+    lat: number,
+    lng: number,
+    radiusKm?: number,
+  ): Promise<NearbyDriverLocation[]> {
+    const radiusMeters =
+      (radiusKm ?? this.config.get<number>('RIDE_MATCH_RADIUS_KM', 5)) * 1000;
+
+    return this.prisma.$queryRaw<NearbyDriverLocation[]>`
+      SELECT
+        dp.id AS "driverId",
+        dp.user_id AS "userId",
+        dp.current_lat AS "lat",
+        dp.current_lng AS "lng",
+        dp.vehicle_make AS "vehicleMake",
+        dp.vehicle_model AS "vehicleModel",
         ST_Distance(dp.location, ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) AS "distanceMeters"
       FROM driver_profiles dp
       WHERE dp.is_online = true

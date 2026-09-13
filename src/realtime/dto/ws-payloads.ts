@@ -1,4 +1,13 @@
-import { IsLatitude, IsLongitude, IsPositive, IsUUID } from 'class-validator';
+import {
+  IsLatitude,
+  IsLongitude,
+  IsNumber,
+  IsOptional,
+  IsPositive,
+  IsUUID,
+  Max,
+  Min,
+} from 'class-validator';
 
 export class SubmitOfferPayload {
   @IsUUID()
@@ -19,4 +28,20 @@ export class LocationUpdatePayload {
 
   @IsLongitude()
   lng: number;
+}
+
+// Center point + radius a rider wants nearby driver pins for, e.g. their
+// current map viewport. Omitting radiusKm falls back to RIDE_MATCH_RADIUS_KM.
+export class TrackNearbyPayload {
+  @IsLatitude()
+  lat: number;
+
+  @IsLongitude()
+  lng: number;
+
+  @IsOptional()
+  @IsNumber()
+  @Min(0.1)
+  @Max(50)
+  radiusKm?: number;
 }
