@@ -8,6 +8,7 @@ import { extname } from 'path';
 import { DriverDocumentType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../common/storage/storage.service';
+import { DriverDocumentResponseDto } from './dto/driver-document-response.dto';
 
 export const REQUIRED_DOCUMENT_TYPES: DriverDocumentType[] = [
   DriverDocumentType.DRIVERS_LICENSE,
@@ -94,7 +95,7 @@ export class DriverDocumentsService {
       await this.storage.delete(existing.storageKey).catch(() => undefined);
     }
 
-    return this.toPublicShape(document);
+    return DriverDocumentResponseDto.from(document);
   }
 
   async listOwn(driverUserId: string) {
@@ -107,7 +108,7 @@ export class DriverDocumentsService {
     const documents = await this.prisma.driverDocument.findMany({
       where: { driverProfileId: driverProfile.id },
     });
-    return documents.map((d) => this.toPublicShape(d));
+    return documents.map((d) => DriverDocumentResponseDto.from(d));
   }
 
   async missingRequiredTypes(
@@ -130,7 +131,7 @@ export class DriverDocumentsService {
     const documents = await this.prisma.driverDocument.findMany({
       where: { driverProfileId },
     });
-    return documents.map((d) => this.toPublicShape(d));
+    return documents.map((d) => DriverDocumentResponseDto.from(d));
   }
 
   async getFileBuffer(
@@ -148,18 +149,5 @@ export class DriverDocumentsService {
       mimeType: document.mimeType,
       filename: document.originalFilename,
     };
-  }
-
-  private toPublicShape(document: {
-    id: string;
-    type: DriverDocumentType;
-    originalFilename: string;
-    mimeType: string;
-    sizeBytes: number;
-    uploadedAt: Date;
-  }) {
-    const { id, type, originalFilename, mimeType, sizeBytes, uploadedAt } =
-      document;
-    return { id, type, originalFilename, mimeType, sizeBytes, uploadedAt };
   }
 }

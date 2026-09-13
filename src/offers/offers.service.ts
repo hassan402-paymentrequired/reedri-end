@@ -85,7 +85,10 @@ export class OffersService {
   async acceptOffer(riderId: string, offerId: string) {
     const offer = await this.prisma.rideOffer.findUnique({
       where: { id: offerId },
-      include: { rideRequest: true, driver: { include: { user: true } } },
+      include: {
+        rideRequest: true,
+        driver: { include: { user: { select: { id: true } } } },
+      },
     });
     if (!offer) {
       throw new NotFoundException('Offer not found');
@@ -106,7 +109,7 @@ export class OffersService {
         status: OfferStatus.PENDING,
         id: { not: offer.id },
       },
-      include: { driver: { include: { user: true } } },
+      include: { driver: { include: { user: { select: { id: true } } } } },
     });
 
     const [, , , trip] = await this.prisma.$transaction([
@@ -170,7 +173,7 @@ export class OffersService {
   ): Promise<{ rideRequestId: string; driverUserId: string } | null> {
     const offer = await this.prisma.rideOffer.findUnique({
       where: { id: offerId },
-      include: { driver: { include: { user: true } } },
+      include: { driver: { include: { user: { select: { id: true } } } } },
     });
     if (!offer || offer.status !== OfferStatus.PENDING) {
       return null;

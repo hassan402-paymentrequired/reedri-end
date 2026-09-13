@@ -8,7 +8,11 @@ import { SkipThrottle } from '@nestjs/throttler';
 import type Redis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
 import { REDIS_CLIENT } from '../redis/redis.module';
+import { SkipResponseEnvelope } from '../common/decorators/skip-response-envelope.decorator';
 
+// Infra probes (load balancers, orchestrators) expect Terminus's bare
+// {status, info, error, details} shape, not the API's success envelope.
+@SkipResponseEnvelope()
 @Controller('health')
 export class HealthController {
   constructor(

@@ -12,6 +12,10 @@ import {
   DriverDocumentsService,
   REQUIRED_DOCUMENT_TYPES,
 } from './driver-documents.service';
+import { DriverStatusResponseDto } from './dto/driver-status-response.dto';
+import { DriverLocationResponseDto } from './dto/driver-location-response.dto';
+import { DriverAdminSummaryResponseDto } from '../admin/dto/driver-admin-summary-response.dto';
+import { DriverVerificationResponseDto } from '../admin/dto/driver-verification-response.dto';
 
 interface DriverIdentity {
   id: string;
@@ -89,10 +93,11 @@ export class DriversService {
       }
     }
 
-    return this.prisma.driverProfile.update({
+    const updated = await this.prisma.driverProfile.update({
       where: { userId },
       data: { isOnline },
     });
+    return DriverStatusResponseDto.from(updated);
   }
 
   async updateLocation(userId: string, lat: number, lng: number) {
@@ -100,10 +105,11 @@ export class DriversService {
     if (!profile) {
       throw new NotFoundException('Driver profile not found');
     }
-    return this.prisma.driverProfile.update({
+    const updated = await this.prisma.driverProfile.update({
       where: { userId },
       data: { currentLat: lat, currentLng: lng, locationUpdatedAt: new Date() },
     });
+    return DriverLocationResponseDto.from(updated);
   }
 
   /**
@@ -144,7 +150,7 @@ export class DriversService {
 
     return profiles.map((p) => {
       const uploadedTypes = new Set(p.documents.map((d) => d.type));
-      return {
+      return DriverAdminSummaryResponseDto.from({
         driverProfileId: p.id,
         userId: p.user.id,
         name: p.user.name,
@@ -158,7 +164,7 @@ export class DriversService {
         missingDocumentTypes: REQUIRED_DOCUMENT_TYPES.filter(
           (t) => !uploadedTypes.has(t),
         ),
-      };
+      });
     });
   }
 
@@ -169,9 +175,10 @@ export class DriversService {
     if (!profile) {
       throw new NotFoundException('Driver profile not found');
     }
-    return this.prisma.driverProfile.update({
+    const updated = await this.prisma.driverProfile.update({
       where: { id: driverProfileId },
       data: { isVerified },
     });
+    return DriverVerificationResponseDto.from(updated);
   }
 }

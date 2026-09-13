@@ -30,6 +30,33 @@ describe('AppModule (e2e)', () => {
       });
   });
 
+  it('/auth/register (POST) wraps the created token pair in the success envelope', () => {
+    return request(app.getHttpServer())
+      .post('/api/v1/auth/register')
+      .send({
+        name: 'Ada Lovelace',
+        phone: `+2348000${Date.now().toString().slice(-6)}`,
+        password: 'correct-horse-battery-staple',
+        role: 'RIDER',
+      })
+      .expect(201)
+      .expect((res) => {
+        const body = res.body as {
+          statusCode: number;
+          message: string;
+          data: { accessToken: string; refreshToken: string };
+          path: string;
+          timestamp: string;
+        };
+        expect(body.statusCode).toBe(201);
+        expect(body.message).toBe('Success');
+        expect(typeof body.data.accessToken).toBe('string');
+        expect(typeof body.data.refreshToken).toBe('string');
+        expect(body.path).toBe('/api/v1/auth/register');
+        expect(typeof body.timestamp).toBe('string');
+      });
+  });
+
   it('rejects an unauthenticated ride request creation', () => {
     return request(app.getHttpServer())
       .post('/api/v1/ride-requests')

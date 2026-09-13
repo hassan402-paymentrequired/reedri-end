@@ -8,6 +8,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { RideRequestStatus, TripStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { DomainEvent, TripStatusEvent } from '../common/events/domain-events';
+import { TripResponseDto } from './dto/trip-response.dto';
 
 @Injectable()
 export class TripsService {
@@ -36,7 +37,7 @@ export class TripsService {
     ]);
 
     this.events.emit(DomainEvent.TripStarted, new TripStatusEvent(updated));
-    return updated;
+    return TripResponseDto.from(updated);
   }
 
   async complete(tripId: string, driverUserId: string) {
@@ -59,7 +60,7 @@ export class TripsService {
     ]);
 
     this.events.emit(DomainEvent.TripCompleted, new TripStatusEvent(updated));
-    return updated;
+    return TripResponseDto.from(updated);
   }
 
   private async findOwnedByDriver(tripId: string, driverUserId: string) {

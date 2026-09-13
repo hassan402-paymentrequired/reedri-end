@@ -135,6 +135,19 @@ describe('OffersService', () => {
       );
     });
 
+    it('never selects more than the driver user id — a password hash must not be pulled into memory', async () => {
+      const { service, prisma } = buildService();
+      (prisma.rideOffer.findUnique as jest.Mock).mockResolvedValue(
+        offerWithRelations,
+      );
+      await service.acceptOffer('rider-1', 'offer-1');
+      const findUniqueCall = (prisma.rideOffer.findUnique as jest.Mock).mock
+        .calls[0][0] as { include: { driver: { include: { user: unknown } } } };
+      expect(findUniqueCall.include.driver.include.user).toEqual({
+        select: { id: true },
+      });
+    });
+
     it('throws ForbiddenException when the requester is not the ride request owner', async () => {
       const { service, prisma } = buildService();
       (prisma.rideOffer.findUnique as jest.Mock).mockResolvedValue(

@@ -14,13 +14,9 @@ import { UsersService } from '../users/users.service';
 import { DriversService } from '../drivers/drivers.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { TokenPairResponseDto } from './dto/token-pair-response.dto';
 
 const BCRYPT_ROUNDS = 12;
-
-export interface TokenPair {
-  accessToken: string;
-  refreshToken: string;
-}
 
 @Injectable()
 export class AuthService {
@@ -32,7 +28,7 @@ export class AuthService {
     private readonly config: ConfigService,
   ) {}
 
-  async register(dto: RegisterDto): Promise<TokenPair> {
+  async register(dto: RegisterDto): Promise<TokenPairResponseDto> {
     const existing = await this.usersService.findByPhone(dto.phone);
     if (existing) {
       throw new ConflictException('Phone number already registered');
@@ -68,7 +64,7 @@ export class AuthService {
     return this.issueTokenPair(user.id, user.role);
   }
 
-  async login(dto: LoginDto): Promise<TokenPair> {
+  async login(dto: LoginDto): Promise<TokenPairResponseDto> {
     const user = await this.usersService.findByPhone(dto.phone);
     if (!user) {
       throw new UnauthorizedException('Invalid credentials');
@@ -80,7 +76,7 @@ export class AuthService {
     return this.issueTokenPair(user.id, user.role);
   }
 
-  async refresh(refreshToken: string): Promise<TokenPair> {
+  async refresh(refreshToken: string): Promise<TokenPairResponseDto> {
     const tokenHash = this.hashToken(refreshToken);
     const stored = await this.prisma.refreshToken.findUnique({
       where: { tokenHash },
@@ -111,7 +107,10 @@ export class AuthService {
     });
   }
 
-  private async issueTokenPair(userId: string, role: Role): Promise<TokenPair> {
+  private async issueTokenPair(
+    userId: string,
+    role: Role,
+  ): Promise<TokenPairResponseDto> {
     const accessTtl = this.config.get<string>(
       'JWT_ACCESS_EXPIRES_IN',
       '15m',
@@ -134,7 +133,7 @@ export class AuthService {
       },
     });
 
-    return { accessToken, refreshToken };
+    return TokenPairResponseDto.from({ accessToken, refreshToken });
   }
 
   private hashToken(token: string): string {

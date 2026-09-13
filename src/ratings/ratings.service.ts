@@ -8,6 +8,7 @@ import { Prisma, TripStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
 import { RateTripDto } from './dto/rate-trip.dto';
+import { RatingResponseDto } from './dto/rating-response.dto';
 
 @Injectable()
 export class RatingsService {
@@ -48,7 +49,7 @@ export class RatingsService {
         },
       });
       await this.usersService.recalculateRating(toUserId);
-      return rating;
+      return RatingResponseDto.from(rating);
     } catch (err) {
       if (
         err instanceof Prisma.PrismaClientKnownRequestError &&

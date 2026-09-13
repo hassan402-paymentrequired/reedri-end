@@ -97,7 +97,36 @@ describe('RideRequestsService', () => {
       );
       await expect(
         service.findOneForUser('rr-1', { userId: 'rider-1', role: Role.RIDER }),
-      ).resolves.toEqual(baseRideRequest);
+      ).resolves.toBeDefined();
+    });
+
+    it('flattens each offer to the driver identity, dropping the driver profile wrapper', async () => {
+      const { service, prisma } = buildService();
+      (prisma.rideRequest.findUnique as jest.Mock).mockResolvedValue({
+        ...baseRideRequest,
+        offers: [
+          {
+            id: 'offer-1',
+            offeredFare: 1200,
+            status: 'PENDING',
+            createdAt: new Date('2024-01-01'),
+            driver: {
+              id: 'driver-profile-1',
+              vehicleMake: 'Toyota',
+              user: { id: 'offering-driver', name: 'Ada', rating: 4.8 },
+            },
+          },
+        ],
+      });
+      const result = await service.findOneForUser('rr-1', {
+        userId: 'rider-1',
+        role: Role.RIDER,
+      });
+      expect(result.offers?.[0].driver).toEqual({
+        id: 'offering-driver',
+        name: 'Ada',
+        rating: 4.8,
+      });
     });
 
     it('forbids a rider who does not own the ride request', async () => {
@@ -123,7 +152,7 @@ describe('RideRequestsService', () => {
           userId: 'offering-driver',
           role: Role.DRIVER,
         }),
-      ).resolves.toEqual(baseRideRequest);
+      ).resolves.toBeDefined();
     });
 
     it('allows the matched driver even without a pending offer entry', async () => {

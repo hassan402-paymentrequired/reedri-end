@@ -9,6 +9,7 @@ import { Role, RideRequestStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MatchingService } from '../matching/matching.service';
 import { CreateRideRequestDto } from './dto/create-ride-request.dto';
+import { RideRequestResponseDto } from './dto/ride-request-response.dto';
 import {
   DomainEvent,
   RideRequestCancelledEvent,
@@ -60,7 +61,10 @@ export class RideRequestsService {
       ),
     );
 
-    return { ...rideRequest, nearbyDriverCount: nearbyDrivers.length };
+    return RideRequestResponseDto.from({
+      ...rideRequest,
+      nearbyDriverCount: nearbyDrivers.length,
+    });
   }
 
   async findOneForUser(id: string, requester: AuthenticatedUser) {
@@ -72,7 +76,7 @@ export class RideRequestsService {
       throw new NotFoundException('Ride request not found');
     }
     this.assertCanView(rideRequest, requester);
-    return rideRequest;
+    return RideRequestResponseDto.from(rideRequest);
   }
 
   async cancel(id: string, requester: AuthenticatedUser, reason?: string) {
@@ -124,7 +128,7 @@ export class RideRequestsService {
       new RideRequestCancelledEvent(updated, affectedDriverUserIds),
     );
 
-    return updated;
+    return RideRequestResponseDto.from(updated);
   }
 
   private assertCanView(
