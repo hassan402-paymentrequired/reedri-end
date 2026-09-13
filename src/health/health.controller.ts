@@ -4,6 +4,7 @@ import {
   HealthCheckService,
   HealthIndicatorResult,
 } from '@nestjs/terminus';
+import { SkipThrottle } from '@nestjs/throttler';
 import type Redis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
 import { REDIS_CLIENT } from '../redis/redis.module';
@@ -16,6 +17,9 @@ export class HealthController {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
+  // Load balancers / orchestrators poll this frequently and must never get
+  // rate-limited — that would look like the app is down when it isn't.
+  @SkipThrottle()
   @Get()
   @HealthCheck()
   check() {

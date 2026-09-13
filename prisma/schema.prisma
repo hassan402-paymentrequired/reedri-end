@@ -16,6 +16,7 @@ datasource db {
 enum Role {
   RIDER
   DRIVER
+  ADMIN
 }
 
 enum RideRequestStatus {
@@ -38,6 +39,13 @@ enum TripStatus {
   STARTED
   COMPLETED
   CANCELLED
+}
+
+enum DriverDocumentType {
+  DRIVERS_LICENSE
+  VEHICLE_REGISTRATION
+  PROOF_OF_INSURANCE
+  PROFILE_PHOTO
 }
 
 // -----------------------------
@@ -95,11 +103,31 @@ model DriverProfile {
   // Prisma Client directly — query it with $queryRaw (see MatchingService).
   location          Unsupported("geography(Point, 4326)")?
 
-  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  offers RideOffer[]
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  offers    RideOffer[]
+  documents DriverDocument[]
 
   @@index([isOnline])
   @@map("driver_profiles")
+}
+
+model DriverDocument {
+  id               String             @id @default(uuid())
+  driverProfileId  String             @map("driver_profile_id")
+  type             DriverDocumentType
+  // Opaque key into StorageService — a relative path for local disk storage
+  // today, an S3 object key if that ever replaces it. Never a public URL:
+  // these are ID documents, served only through an authenticated endpoint.
+  storageKey       String             @map("storage_key")
+  originalFilename String             @map("original_filename")
+  mimeType         String             @map("mime_type")
+  sizeBytes        Int                @map("size_bytes")
+  uploadedAt       DateTime           @default(now()) @map("uploaded_at")
+
+  driverProfile DriverProfile @relation(fields: [driverProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([driverProfileId, type])
+  @@map("driver_documents")
 }
 
 model RideRequest {

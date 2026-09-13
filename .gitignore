@@ -27,3 +27,6 @@ npm-debug.log*
 
 # prisma
 prisma/*.db
+
+# uploaded driver documents (local disk storage, dev only)
+/uploads

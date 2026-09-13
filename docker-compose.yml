@@ -11,6 +11,11 @@ services:
       - '5433:5432'
     volumes:
       - reedr_pgdata:/var/lib/postgresql/data
+    # max_connections must comfortably exceed (app instances × Prisma's
+    # connection_limit) — see DATABASE_URL in .env.example for that half of
+    # the sizing. 200 gives headroom for ~7 instances at connection_limit=25
+    # before this needs revisiting (or fronting with PgBouncer).
+    command: postgres -c max_connections=200 -c shared_buffers=256MB
     healthcheck:
       test: ['CMD-SHELL', 'pg_isready -U reedr']
       interval: 5s
@@ -46,7 +51,7 @@ services:
       redis:
         condition: service_healthy
     environment:
-      DATABASE_URL: postgresql://reedr:reedr@postgres:5432/reedr?schema=public
+      DATABASE_URL: postgresql://reedr:reedr@postgres:5432/reedr?schema=public&connection_limit=25&pool_timeout=20
       REDIS_URL: redis://redis:6379
       JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-string-min-32-chars}
       JWT_ACCESS_EXPIRES_IN: 15m

@@ -15,4 +15,6 @@ export const envValidationSchema = Joi.object({
   // Comma-separated list of allowed origins. Unset -> '*' (fine for local
   // dev; set explicitly before this is reachable from anywhere but localhost).
   CORS_ORIGIN: Joi.string().optional(),
+  UPLOAD_DIR: Joi.string().default('./uploads'),
+  MAX_UPLOAD_SIZE_MB: Joi.number().positive().default(10),
 });

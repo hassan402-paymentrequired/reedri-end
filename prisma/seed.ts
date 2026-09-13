@@ -15,6 +15,20 @@ const LAGOS_DRIVERS = [
 async function main() {
   const passwordHash = await bcrypt.hash('password123', 10);
 
+  // Admins can't self-register (see RegisterDto) — this is the only way to
+  // create one. Dev-only credential; never reuse this password anywhere real.
+  await prisma.user.upsert({
+    where: { phone: '+2348000009999' },
+    update: {},
+    create: {
+      name: 'Reedr Admin',
+      phone: '+2348000009999',
+      password: passwordHash,
+      role: Role.ADMIN,
+    },
+  });
+  console.log('Seeded admin user: +2348000009999 / password123');
+
   for (const [i, d] of LAGOS_DRIVERS.entries()) {
     const phone = `+234800000${String(i).padStart(4, '0')}`;
     const user = await prisma.user.upsert({
@@ -28,6 +42,9 @@ async function main() {
       },
     });
 
+    // Writing isOnline/isVerified directly bypasses DriversService's
+    // document-completeness gate — fine for seed data, not a path real
+    // drivers can take (see DriversService.setOnlineStatus).
     await prisma.driverProfile.upsert({
       where: { userId: user.id },
       update: { currentLat: d.lat, currentLng: d.lng, isOnline: true },

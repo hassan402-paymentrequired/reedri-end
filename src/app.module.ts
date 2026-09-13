@@ -10,6 +10,8 @@ import type Redis from 'ioredis';
 import { envValidationSchema } from './config/env.validation';
 import { PrismaModule } from './prisma/prisma.module';
 import { RedisModule, REDIS_CLIENT } from './redis/redis.module';
+import { StorageModule } from './common/storage/storage.module';
+import { CacheModule } from './common/cache/cache.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -20,6 +22,7 @@ import { TripsModule } from './trips/trips.module';
 import { MatchingModule } from './matching/matching.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { MaintenanceModule } from './maintenance/maintenance.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -51,6 +54,8 @@ import { MaintenanceModule } from './maintenance/maintenance.module';
       },
     }),
     RedisModule,
+    StorageModule,
+    CacheModule,
     BullModule.forRootAsync({
       imports: [RedisModule],
       inject: [REDIS_CLIENT],
@@ -67,6 +72,7 @@ import { MaintenanceModule } from './maintenance/maintenance.module';
     MatchingModule,
     RealtimeModule,
     MaintenanceModule,
+    AdminModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
-  IsEnum,
+  IsIn,
   IsNotEmpty,
   IsPhoneNumber,
   IsString,
@@ -8,6 +8,11 @@ import {
   ValidateIf,
 } from 'class-validator';
 import { Role } from '@prisma/client';
+
+// Deliberately excludes Role.ADMIN — public registration must never be able
+// to self-assign the admin role. Admins are created out-of-band (see
+// prisma/seed.ts) and can only be created/promoted by an existing admin.
+export const PUBLIC_REGISTRATION_ROLES = [Role.RIDER, Role.DRIVER] as const;
 
 export class RegisterDto {
   @ApiProperty({ example: 'Ada Obi' })
@@ -24,9 +29,9 @@ export class RegisterDto {
   @MinLength(8)
   password: string;
 
-  @ApiProperty({ enum: Role })
-  @IsEnum(Role)
-  role: Role;
+  @ApiProperty({ enum: PUBLIC_REGISTRATION_ROLES })
+  @IsIn(PUBLIC_REGISTRATION_ROLES)
+  role: (typeof PUBLIC_REGISTRATION_ROLES)[number];
 
   // Required only when role === DRIVER.
   @ApiPropertyOptional({ example: 'Toyota' })
