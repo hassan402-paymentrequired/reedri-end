@@ -1,0 +1,62 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: reedr-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: reedr
+      POSTGRES_PASSWORD: reedr
+      POSTGRES_DB: reedr
+    ports:
+      - '5433:5432'
+    volumes:
+      - reedr_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U reedr']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: reedr-redis
+    restart: unless-stopped
+    # AOF persistence so BullMQ's delayed jobs (offer expiry, driver-disconnect
+    # grace period) survive a Redis restart instead of silently vanishing.
+    command: redis-server --appendonly yes
+    ports:
+      - '6380:6379'
+    volumes:
+      - reedr_redisdata:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Optional: the app itself, for full-stack parity in one command. Local dev
+  # typically runs `npm run start:dev` on the host instead, for fast reload.
+  app:
+    build: .
+    container_name: reedr-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://reedr:reedr@postgres:5432/reedr?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-change-me-to-a-long-random-string-min-32-chars}
+      JWT_ACCESS_EXPIRES_IN: 15m
+      JWT_REFRESH_EXPIRES_IN: 30d
+      PORT: 3300
+      NODE_ENV: production
+    ports:
+      - '3300:3300'
+    profiles: ['full']
+
+volumes:
+  reedr_pgdata:
+  reedr_redisdata:

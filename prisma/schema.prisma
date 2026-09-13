@@ -1,0 +1,182 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+// -----------------------------
+// Enums
+// -----------------------------
+
+enum Role {
+  RIDER
+  DRIVER
+}
+
+enum RideRequestStatus {
+  PENDING
+  MATCHED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum OfferStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum TripStatus {
+  MATCHED
+  STARTED
+  COMPLETED
+  CANCELLED
+}
+
+// -----------------------------
+// Models
+// -----------------------------
+
+model User {
+  id        String   @id @default(uuid())
+  name      String
+  phone     String   @unique
+  password  String
+  role      Role
+  rating    Float    @default(5.0)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  driverProfile   DriverProfile?
+  rideRequests    RideRequest[]   @relation("RiderRideRequests")
+  tripsAsRider    Trip[]          @relation("RiderTrips")
+  tripsAsDriver   Trip[]          @relation("DriverTrips")
+  ratingsGiven    Rating[]        @relation("RatingsFrom")
+  ratingsReceived Rating[]        @relation("RatingsTo")
+  refreshTokens   RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  userId    String    @map("user_id")
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  revokedAt DateTime? @map("revoked_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model DriverProfile {
+  id                String    @id @default(uuid())
+  userId            String    @unique @map("user_id")
+  vehicleMake       String    @map("vehicle_make")
+  vehicleModel      String    @map("vehicle_model")
+  plateNumber       String    @unique @map("plate_number")
+  isOnline          Boolean   @default(false) @map("is_online")
+  isVerified        Boolean   @default(false) @map("is_verified")
+  // Source of truth for reads/writes from the app layer.
+  currentLat        Float?    @map("current_lat")
+  currentLng        Float?    @map("current_lng")
+  locationUpdatedAt DateTime? @map("location_updated_at")
+  // Derived PostGIS geography point, kept in sync with currentLat/currentLng by a
+  // DB trigger (see migration `..._add_postgis_geography`). Not writable through
+  // Prisma Client directly — query it with $queryRaw (see MatchingService).
+  location          Unsupported("geography(Point, 4326)")?
+
+  user   User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  offers RideOffer[]
+
+  @@index([isOnline])
+  @@map("driver_profiles")
+}
+
+model RideRequest {
+  id             String                                @id @default(uuid())
+  riderId        String                                @map("rider_id")
+  pickupLat      Float                                 @map("pickup_lat")
+  pickupLng      Float                                 @map("pickup_lng")
+  dropoffLat     Float                                 @map("dropoff_lat")
+  dropoffLng     Float                                 @map("dropoff_lng")
+  // Derived from pickupLat/pickupLng by a DB trigger; see MatchingService for reads.
+  pickupLocation Unsupported("geography(Point, 4326)")? @map("pickup_location")
+  suggestedFare  Decimal                               @map("suggested_fare")
+  status         RideRequestStatus                     @default(PENDING)
+  cancelReason   String?                               @map("cancel_reason")
+  cancelledAt    DateTime?                             @map("cancelled_at")
+  createdAt      DateTime                              @default(now()) @map("created_at")
+
+  rider  User        @relation("RiderRideRequests", fields: [riderId], references: [id])
+  offers RideOffer[]
+  trip   Trip?
+
+  @@index([status, createdAt])
+  @@map("ride_requests")
+}
+
+model RideOffer {
+  id            String      @id @default(uuid())
+  rideRequestId String      @map("ride_request_id")
+  driverId      String      @map("driver_id")
+  offeredFare   Decimal     @map("offered_fare")
+  status        OfferStatus @default(PENDING)
+  createdAt     DateTime    @default(now()) @map("created_at")
+  expiresAt     DateTime?   @map("expires_at")
+
+  rideRequest RideRequest   @relation(fields: [rideRequestId], references: [id], onDelete: Cascade)
+  driver      DriverProfile @relation(fields: [driverId], references: [id])
+
+  @@unique([rideRequestId, driverId])
+  @@index([rideRequestId, status])
+  @@map("ride_offers")
+}
+
+model Trip {
+  id            String     @id @default(uuid())
+  rideRequestId String     @unique @map("ride_request_id")
+  driverId      String     @map("driver_id")
+  riderId       String     @map("rider_id")
+  agreedFare    Decimal    @map("agreed_fare")
+  status        TripStatus @default(STARTED)
+  routePolyline String?    @map("route_polyline")
+  startedAt     DateTime?  @map("started_at")
+  endedAt       DateTime?  @map("ended_at")
+  cancelReason  String?    @map("cancel_reason")
+  createdAt     DateTime   @default(now()) @map("created_at")
+
+  rideRequest RideRequest @relation(fields: [rideRequestId], references: [id])
+  driver      User        @relation("DriverTrips", fields: [driverId], references: [id])
+  rider       User        @relation("RiderTrips", fields: [riderId], references: [id])
+  ratings     Rating[]
+
+  @@index([status])
+  @@map("trips")
+}
+
+model Rating {
+  id         String   @id @default(uuid())
+  tripId     String   @map("trip_id")
+  fromUserId String   @map("from_user_id")
+  toUserId   String   @map("to_user_id")
+  score      Int
+  comment    String?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  trip     Trip @relation(fields: [tripId], references: [id])
+  fromUser User @relation("RatingsFrom", fields: [fromUserId], references: [id])
+  toUser   User @relation("RatingsTo", fields: [toUserId], references: [id])
+
+  @@unique([tripId, fromUserId, toUserId])
+  @@map("ratings")
+}
