@@ -10,12 +10,12 @@ describe('JwtStrategy', () => {
   const strategy = new JwtStrategy(config);
 
   it('maps a valid payload to an AuthenticatedUser', () => {
-    const result = strategy.validate({ sub: 'user-1', role: Role.RIDER });
-    expect(result).toEqual({ userId: 'user-1', role: Role.RIDER });
+    const result = strategy.validate({ sub: 'user-1', role: Role.USER });
+    expect(result).toEqual({ userId: 'user-1', role: Role.USER });
   });
 
   it('rejects a payload missing sub', () => {
-    expect(() => strategy.validate({ sub: '', role: Role.RIDER })).toThrow(
+    expect(() => strategy.validate({ sub: '', role: Role.USER })).toThrow(
       UnauthorizedException,
     );
   });

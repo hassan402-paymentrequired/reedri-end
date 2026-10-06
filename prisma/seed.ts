@@ -1,4 +1,9 @@
-import { PrismaClient, Role } from '@prisma/client';
+import {
+  ActiveProfile,
+  DriverApplicationStatus,
+  PrismaClient,
+  Role,
+} from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
@@ -17,6 +22,8 @@ async function main() {
 
   // Admins can't self-register (see RegisterDto) — this is the only way to
   // create one. Dev-only credential; never reuse this password anywhere real.
+  // TODO(admin-portal): admins move to their own admin_users table; this
+  // seeded users-table row with Role.ADMIN goes away with it.
   await prisma.user.upsert({
     where: { phone: '+2348000009999' },
     update: {},
@@ -38,23 +45,43 @@ async function main() {
         name: d.name,
         phone,
         password: passwordHash,
-        role: Role.DRIVER,
+        activeProfile: ActiveProfile.DRIVER,
       },
     });
 
-    // Writing isOnline/isVerified directly bypasses DriversService's
-    // document-completeness gate — fine for seed data, not a path real
-    // drivers can take (see DriversService.setOnlineStatus).
+    // Fabricates the end state of the driver application flow — an already
+    // verified application plus the profile its approval would have created.
+    // Fine for seed data, not a path real drivers can take: no documents are
+    // uploaded and no review happened (see DriverApplicationService.review).
+    const application = await prisma.driverApplication.upsert({
+      where: { userId: user.id },
+      update: {},
+      create: {
+        userId: user.id,
+        status: DriverApplicationStatus.VERIFIED,
+        fullLegalName: d.name,
+        dateOfBirth: new Date('1990-01-01'),
+        residentialAddress: `${d.area}, Lagos`,
+        licenseNumber: `LSD-SEED-${String(i).padStart(4, '0')}`,
+        licenseExpiryDate: new Date('2030-01-01'),
+        vehicleMake: 'Toyota',
+        vehicleModel: 'Corolla',
+        vehicleYear: 2018,
+        vehicleColor: 'Silver',
+        plateNumber: `LAG-${100 + i}-XY`,
+        registrationExpiryDate: new Date('2030-01-01'),
+        submittedAt: new Date(),
+        reviewedAt: new Date(),
+      },
+    });
+
     await prisma.driverProfile.upsert({
       where: { userId: user.id },
       update: { currentLat: d.lat, currentLng: d.lng, isOnline: true },
       create: {
         userId: user.id,
-        vehicleMake: 'Toyota',
-        vehicleModel: 'Corolla',
-        plateNumber: `LAG-${100 + i}-XY`,
+        driverApplicationId: application.id,
         isOnline: true,
-        isVerified: true,
         currentLat: d.lat,
         currentLng: d.lng,
       },

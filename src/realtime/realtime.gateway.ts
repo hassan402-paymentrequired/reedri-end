@@ -12,7 +12,6 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { OnEvent } from '@nestjs/event-emitter';
 import { Server, Socket } from 'socket.io';
-import { Role } from '@prisma/client';
 import { JwtPayload } from '../auth/types/jwt-payload.type';
 import { DriversService } from '../drivers/drivers.service';
 import { OffersService } from '../offers/offers.service';
@@ -37,7 +36,7 @@ import { WsRateLimiter } from './ws-rate-limiter';
 import { haversineMeters } from '../common/geo/haversine';
 
 interface AuthenticatedSocket extends Socket {
-  data: { userId: string; role: Role };
+  data: { userId: string };
 }
 
 function userRoom(userId: string): string {
@@ -99,10 +98,7 @@ export class RealtimeGateway
     try {
       const token = this.extractToken(socket);
       const payload = await this.jwtService.verifyAsync<JwtPayload>(token);
-      (socket as AuthenticatedSocket).data = {
-        userId: payload.sub,
-        role: payload.role,
-      };
+      (socket as AuthenticatedSocket).data = { userId: payload.sub };
       await socket.join(userRoom(payload.sub));
     } catch {
       socket.emit('error', { message: 'Unauthorized' });
@@ -111,7 +107,7 @@ export class RealtimeGateway
   }
 
   async handleDisconnect(socket: Socket): Promise<void> {
-    const { userId, role } = (socket as AuthenticatedSocket).data ?? {};
+    const { userId } = (socket as AuthenticatedSocket).data ?? {};
     if (!userId) return;
 
     this.offerSubmitLimiter.clear(userId);
@@ -120,8 +116,9 @@ export class RealtimeGateway
     this.trackSubscribeLimiter.clear(userId);
     this.riderTrackSubscriptions.delete(userId);
 
-    if (role !== Role.DRIVER) return;
-
+    // No mode check: goOffline no-ops for anyone without a driver profile,
+    // and a dual-mode user's socket can't be trusted to say which mode they
+    // were in anyway.
     const room = this.server.sockets.adapter.rooms.get(userRoom(userId));
     const stillConnectedElsewhere = !!room && room.size > 0;
     if (!stillConnectedElsewhere) {

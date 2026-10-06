@@ -1,10 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  Injectable,
-  NotFoundException,
-} from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { PrismaService } from '../prisma/prisma.service';
 import { OffersService } from '../offers/offers.service';
@@ -14,24 +8,19 @@ import {
   DriverLocationUpdatedEvent,
   DriverOnlineStatusChangedEvent,
 } from '../common/events/domain-events';
-import {
-  DriverDocumentsService,
-  REQUIRED_DOCUMENT_TYPES,
-} from './driver-documents.service';
 import { DriverStatusResponseDto } from './dto/driver-status-response.dto';
 import { DriverLocationResponseDto } from './dto/driver-location-response.dto';
-import { DriverAdminSummaryResponseDto } from '../admin/dto/driver-admin-summary-response.dto';
-import { DriverVerificationResponseDto } from '../admin/dto/driver-verification-response.dto';
 
 interface DriverIdentity {
   id: string;
   userId: string;
 }
 
-// Identity fields are set once at registration and never updated by any
-// current endpoint, so a fairly long TTL is safe. If a "change vehicle info"
-// endpoint is ever added, it MUST call cache.del(driverIdentityCacheKey(userId))
-// — this cache has no other invalidation path.
+// A DriverProfile's id/userId pair is fixed the moment an application is
+// verified and never changes afterwards, so a fairly long TTL is safe — this
+// cache holds nothing that can go stale. If a profile ever becomes deletable,
+// that path MUST call cache.del(driverIdentityCacheKey(userId)); there is no
+// other invalidation.
 const DRIVER_IDENTITY_CACHE_TTL_SECONDS = 300;
 
 function driverIdentityCacheKey(userId: string): string {
@@ -43,24 +32,11 @@ export class DriversService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly offersService: OffersService,
-    private readonly driverDocumentsService: DriverDocumentsService,
     private readonly cache: CacheService,
     private readonly events: EventEmitter2,
   ) {}
 
-  createProfile(
-    tx: Prisma.TransactionClient,
-    params: {
-      userId: string;
-      vehicleMake: string;
-      vehicleModel: string;
-      plateNumber: string;
-    },
-  ) {
-    return tx.driverProfile.create({ data: params });
-  }
-
-  /** Full, always-fresh row — use when you need current isOnline/location/isVerified. */
+  /** Full, always-fresh row — use when you need current isOnline/location. */
   findByUserId(userId: string) {
     return this.prisma.driverProfile.findUnique({ where: { userId } });
   }
@@ -89,17 +65,8 @@ export class DriversService {
       throw new NotFoundException('Driver profile not found');
     }
 
-    if (isOnline) {
-      const missing = await this.driverDocumentsService.missingRequiredTypes(
-        profile.id,
-      );
-      if (missing.length > 0) {
-        throw new BadRequestException(
-          `Complete your driver profile before going online — missing: ${missing.join(', ')}`,
-        );
-      }
-    }
-
+    // No document-completeness check here: a DriverProfile only exists once a
+    // complete application was verified, so there is nothing left to gate on.
     const updated = await this.prisma.driverProfile.update({
       where: { userId },
       data: { isOnline },
@@ -157,60 +124,5 @@ export class DriversService {
       ),
     );
     await this.offersService.scheduleDriverOfferExpiry(profile.id);
-  }
-
-  async assertPlateNumberAvailable(plateNumber: string): Promise<void> {
-    const existing = await this.prisma.driverProfile.findUnique({
-      where: { plateNumber },
-    });
-    if (existing) {
-      throw new ConflictException('Plate number already registered');
-    }
-  }
-
-  /** Admin-only: every driver profile with enough context to review it. */
-  async listAll() {
-    const profiles = await this.prisma.driverProfile.findMany({
-      include: {
-        user: {
-          select: { id: true, name: true, phone: true, createdAt: true },
-        },
-        documents: { select: { type: true } },
-      },
-      orderBy: { user: { createdAt: 'desc' } },
-    });
-
-    return profiles.map((p) => {
-      const uploadedTypes = new Set(p.documents.map((d) => d.type));
-      return DriverAdminSummaryResponseDto.from({
-        driverProfileId: p.id,
-        userId: p.user.id,
-        name: p.user.name,
-        phone: p.user.phone,
-        registeredAt: p.user.createdAt,
-        vehicleMake: p.vehicleMake,
-        vehicleModel: p.vehicleModel,
-        plateNumber: p.plateNumber,
-        isOnline: p.isOnline,
-        isVerified: p.isVerified,
-        missingDocumentTypes: REQUIRED_DOCUMENT_TYPES.filter(
-          (t) => !uploadedTypes.has(t),
-        ),
-      });
-    });
-  }
-
-  async setVerified(driverProfileId: string, isVerified: boolean) {
-    const profile = await this.prisma.driverProfile.findUnique({
-      where: { id: driverProfileId },
-    });
-    if (!profile) {
-      throw new NotFoundException('Driver profile not found');
-    }
-    const updated = await this.prisma.driverProfile.update({
-      where: { id: driverProfileId },
-      data: { isVerified },
-    });
-    return DriverVerificationResponseDto.from(updated);
   }
 }

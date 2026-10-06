@@ -47,7 +47,7 @@ export class RideRequestResponseDto {
   @Expose() pickupLng!: number;
   @Expose() dropoffLat!: number;
   @Expose() dropoffLng!: number;
-  @Expose() suggestedFare!: unknown;
+  @Expose() suggestedFare!: number;
   @Expose() status!: RideRequestStatus;
   @Expose() cancelReason!: string | null;
   @Expose() cancelledAt!: Date | null;
@@ -67,7 +67,7 @@ export class RideRequestResponseDto {
     pickupLng: number;
     dropoffLat: number;
     dropoffLng: number;
-    suggestedFare: unknown;
+    suggestedFare: number;
     status: RideRequestStatus;
     cancelReason: string | null;
     cancelledAt: Date | null;
@@ -76,7 +76,7 @@ export class RideRequestResponseDto {
     trip?: unknown;
     offers?: {
       id: string;
-      offeredFare: unknown;
+      offeredFare: number;
       status: OfferStatus;
       createdAt: Date;
       driver: { user: { id: string; name: string; rating: number } };

@@ -1,5 +1,5 @@
 import { Exclude, Expose, plainToInstance } from 'class-transformer';
-import { Role } from '@prisma/client';
+import { ActiveProfile, Role } from '@prisma/client';
 
 @Exclude()
 export class UserResponseDto {
@@ -7,6 +7,7 @@ export class UserResponseDto {
   @Expose() name!: string;
   @Expose() phone!: string;
   @Expose() role!: Role;
+  @Expose() activeProfile!: ActiveProfile;
   @Expose() rating!: number;
   @Expose() createdAt!: Date;
 
@@ -15,6 +16,7 @@ export class UserResponseDto {
     name: string;
     phone: string;
     role: Role;
+    activeProfile: ActiveProfile;
     rating: number;
     createdAt: Date;
   }): UserResponseDto {

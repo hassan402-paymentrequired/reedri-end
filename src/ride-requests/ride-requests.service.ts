@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { EventEmitter2 } from '@nestjs/event-emitter';
-import { Role, RideRequestStatus } from '@prisma/client';
+import { RideRequestStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MatchingService } from '../matching/matching.service';
 import { CreateRideRequestDto } from './dto/create-ride-request.dto';
@@ -131,6 +131,9 @@ export class RideRequestsService {
     return RideRequestResponseDto.from(updated);
   }
 
+  // Authorization is by participation, not by mode: one account can be both
+  // rider and driver, so who the requester *is* on this ride request is the
+  // only thing that decides access.
   private assertCanView(
     rideRequest: {
       riderId: string;
@@ -139,17 +142,12 @@ export class RideRequestsService {
     },
     requester: AuthenticatedUser,
   ): void {
-    if (requester.role === Role.RIDER) {
-      if (rideRequest.riderId !== requester.userId) {
-        throw new ForbiddenException();
-      }
-      return;
-    }
+    const isOwnerRider = rideRequest.riderId === requester.userId;
     const isOfferingDriver = rideRequest.offers.some(
       (o) => o.driver.user.id === requester.userId,
     );
     const isMatchedDriver = rideRequest.trip?.driverId === requester.userId;
-    if (!isOfferingDriver && !isMatchedDriver) {
+    if (!isOwnerRider && !isOfferingDriver && !isMatchedDriver) {
       throw new ForbiddenException();
     }
   }
@@ -158,11 +156,8 @@ export class RideRequestsService {
     rideRequest: { riderId: string; trip: { driverId: string } | null },
     requester: AuthenticatedUser,
   ): void {
-    const isOwnerRider =
-      requester.role === Role.RIDER && rideRequest.riderId === requester.userId;
-    const isMatchedDriver =
-      requester.role === Role.DRIVER &&
-      rideRequest.trip?.driverId === requester.userId;
+    const isOwnerRider = rideRequest.riderId === requester.userId;
+    const isMatchedDriver = rideRequest.trip?.driverId === requester.userId;
     if (!isOwnerRider && !isMatchedDriver) {
       throw new ForbiddenException();
     }

@@ -22,25 +22,25 @@ describe('RolesGuard', () => {
 
   it('allows access when the user has one of the required roles', () => {
     const reflector = {
-      getAllAndOverride: () => [Role.DRIVER],
+      getAllAndOverride: () => [Role.ADMIN],
     } as unknown as Reflector;
     const guard = new RolesGuard(reflector);
-    const ctx = mockContext({ userId: 'u1', role: Role.DRIVER });
+    const ctx = mockContext({ userId: 'u1', role: Role.ADMIN });
     expect(guard.canActivate(ctx)).toBe(true);
   });
 
   it('denies access when the user does not have a required role', () => {
     const reflector = {
-      getAllAndOverride: () => [Role.DRIVER],
+      getAllAndOverride: () => [Role.ADMIN],
     } as unknown as Reflector;
     const guard = new RolesGuard(reflector);
-    const ctx = mockContext({ userId: 'u1', role: Role.RIDER });
+    const ctx = mockContext({ userId: 'u1', role: Role.USER });
     expect(guard.canActivate(ctx)).toBe(false);
   });
 
   it('denies access when there is no authenticated user', () => {
     const reflector = {
-      getAllAndOverride: () => [Role.DRIVER],
+      getAllAndOverride: () => [Role.ADMIN],
     } as unknown as Reflector;
     const guard = new RolesGuard(reflector);
     expect(guard.canActivate(mockContext(undefined))).toBe(false);

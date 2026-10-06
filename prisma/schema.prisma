@@ -13,10 +13,28 @@ datasource db {
 // Enums
 // -----------------------------
 
+// Account class, not app mode — which of rider/driver a user is currently
+// acting as lives in User.activeProfile.
 enum Role {
+  USER
+  // TODO(admin-portal): admins move to their own admin_users table; this
+  // member and every @Roles(Role.ADMIN) gate goes away with it.
+  ADMIN
+}
+
+enum ActiveProfile {
   RIDER
   DRIVER
-  ADMIN
+}
+
+enum DriverApplicationStatus {
+  NOT_STARTED
+  PERSONAL_INFO_SUBMITTED
+  LICENSE_SUBMITTED
+  VEHICLE_SUBMITTED
+  UNDER_REVIEW
+  VERIFIED
+  REJECTED
 }
 
 enum RideRequestStatus {
@@ -41,9 +59,13 @@ enum TripStatus {
   CANCELLED
 }
 
+// The first three are required to submit a DriverApplication for review
+// (see REQUIRED_DOCUMENT_TYPES); the last two are accepted whenever an
+// applicant has them but never block verification.
 enum DriverDocumentType {
   DRIVERS_LICENSE
   VEHICLE_REGISTRATION
+  VEHICLE_PHOTO
   PROOF_OF_INSURANCE
   PROFILE_PHOTO
 }
@@ -53,14 +75,18 @@ enum DriverDocumentType {
 // -----------------------------
 
 model User {
-  id        String   @id @default(uuid())
-  name      String
-  phone     String   @unique
-  password  String
-  role      Role
-  rating    Float    @default(5.0)
-  createdAt DateTime @default(now()) @map("created_at")
+  id            String        @id @default(uuid())
+  name          String
+  phone         String        @unique
+  password      String
+  role          Role          @default(USER)
+  // Which mode of the app this user is currently in. Every user is
+  // rider-capable from signup; DRIVER requires a verified DriverProfile.
+  activeProfile ActiveProfile @default(RIDER) @map("active_profile")
+  rating        Float         @default(5.0)
+  createdAt     DateTime      @default(now()) @map("created_at")
 
+  driverApplication DriverApplication?
   driverProfile   DriverProfile?
   rideRequests    RideRequest[]   @relation("RiderRideRequests")
   tripsAsRider    Trip[]          @relation("RiderTrips")
@@ -104,47 +130,92 @@ model PasswordResetToken {
   @@map("password_reset_tokens")
 }
 
+// Created when a user opts into becoming a driver, then filled in over three
+// separate submissions. Every step field is nullable because the record is
+// built incrementally — `status` is the authority on what has actually been
+// submitted, not the presence of any given column.
+model DriverApplication {
+  id     String                  @id @default(uuid())
+  userId String                  @unique @map("user_id")
+  status DriverApplicationStatus @default(NOT_STARTED)
+
+  // Step 1 — personal information
+  fullLegalName      String?   @map("full_legal_name")
+  dateOfBirth        DateTime? @map("date_of_birth") @db.Date
+  residentialAddress String?   @map("residential_address")
+
+  // Step 2 — driver's license (the image itself is a DRIVERS_LICENSE document)
+  licenseNumber     String?   @map("license_number")
+  licenseExpiryDate DateTime? @map("license_expiry_date") @db.Date
+
+  // Step 3 — vehicle (photo and registration scan are documents)
+  vehicleMake            String?   @map("vehicle_make")
+  vehicleModel           String?   @map("vehicle_model")
+  vehicleYear            Int?      @map("vehicle_year")
+  vehicleColor           String?   @map("vehicle_color")
+  // Unique across applications so two applicants can't claim one plate.
+  // Postgres allows many NULLs under a unique index, so unsubmitted
+  // applications don't collide with each other.
+  plateNumber            String?   @unique @map("plate_number")
+  registrationExpiryDate DateTime? @map("registration_expiry_date") @db.Date
+
+  rejectionReason String?   @map("rejection_reason")
+  submittedAt     DateTime? @map("submitted_at")
+  reviewedAt      DateTime? @map("reviewed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  user          User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  driverProfile DriverProfile?
+  documents     DriverDocument[]
+
+  @@index([status])
+  @@map("driver_applications")
+}
+
+// Exists only for verified drivers — it is created by an approved
+// DriverApplication review and never before, so the row's existence IS the
+// verification. Vehicle and license details are read through `application`
+// rather than duplicated here.
 model DriverProfile {
-  id                String    @id @default(uuid())
-  userId            String    @unique @map("user_id")
-  vehicleMake       String    @map("vehicle_make")
-  vehicleModel      String    @map("vehicle_model")
-  plateNumber       String    @unique @map("plate_number")
-  isOnline          Boolean   @default(false) @map("is_online")
-  isVerified        Boolean   @default(false) @map("is_verified")
+  id                  String    @id @default(uuid())
+  userId              String    @unique @map("user_id")
+  driverApplicationId String    @unique @map("driver_application_id")
+  isOnline            Boolean   @default(false) @map("is_online")
   // Source of truth for reads/writes from the app layer.
-  currentLat        Float?    @map("current_lat")
-  currentLng        Float?    @map("current_lng")
-  locationUpdatedAt DateTime? @map("location_updated_at")
+  currentLat          Float?    @map("current_lat")
+  currentLng          Float?    @map("current_lng")
+  locationUpdatedAt   DateTime? @map("location_updated_at")
   // Derived PostGIS geography point, kept in sync with currentLat/currentLng by a
   // DB trigger (see migration `..._add_postgis_geography`). Not writable through
   // Prisma Client directly — query it with $queryRaw (see MatchingService).
-  location          Unsupported("geography(Point, 4326)")?
+  location            Unsupported("geography(Point, 4326)")?
 
-  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
-  offers    RideOffer[]
-  documents DriverDocument[]
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  application DriverApplication @relation(fields: [driverApplicationId], references: [id])
+  offers      RideOffer[]
 
   @@index([isOnline])
   @@map("driver_profiles")
 }
 
 model DriverDocument {
-  id               String             @id @default(uuid())
-  driverProfileId  String             @map("driver_profile_id")
-  type             DriverDocumentType
+  id                  String             @id @default(uuid())
+  driverApplicationId String             @map("driver_application_id")
+  type                DriverDocumentType
   // Opaque key into StorageService — a relative path for local disk storage
   // today, an S3 object key if that ever replaces it. Never a public URL:
   // these are ID documents, served only through an authenticated endpoint.
-  storageKey       String             @map("storage_key")
-  originalFilename String             @map("original_filename")
-  mimeType         String             @map("mime_type")
-  sizeBytes        Int                @map("size_bytes")
-  uploadedAt       DateTime           @default(now()) @map("uploaded_at")
+  storageKey          String             @map("storage_key")
+  originalFilename    String             @map("original_filename")
+  mimeType            String             @map("mime_type")
+  sizeBytes           Int                @map("size_bytes")
+  uploadedAt          DateTime           @default(now()) @map("uploaded_at")
 
-  driverProfile DriverProfile @relation(fields: [driverProfileId], references: [id], onDelete: Cascade)
+  application DriverApplication @relation(fields: [driverApplicationId], references: [id], onDelete: Cascade)
 
-  @@unique([driverProfileId, type])
+  // One current document per type — re-uploading replaces in place.
+  @@unique([driverApplicationId, type])
   @@map("driver_documents")
 }
 

@@ -10,13 +10,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { StorageService } from '../common/storage/storage.service';
 import { DriverDocumentResponseDto } from './dto/driver-document-response.dto';
 
-export const REQUIRED_DOCUMENT_TYPES: DriverDocumentType[] = [
-  DriverDocumentType.DRIVERS_LICENSE,
-  DriverDocumentType.VEHICLE_REGISTRATION,
-  DriverDocumentType.PROOF_OF_INSURANCE,
-  DriverDocumentType.PROFILE_PHOTO,
-];
-
 const ALLOWED_MIME_TYPES = new Set([
   'image/jpeg',
   'image/png',
@@ -41,8 +34,13 @@ export class DriverDocumentsService {
     return ALLOWED_MIME_TYPES.has(mimetype);
   }
 
+  /**
+   * Documents hang off the DriverApplication, not the DriverProfile — they're
+   * uploaded during the application, before any profile exists. A verified
+   * driver's documents are reached through `driverProfile.application`.
+   */
   async upload(
-    driverUserId: string,
+    driverApplicationId: string,
     type: DriverDocumentType,
     file: UploadableFile,
   ) {
@@ -52,28 +50,17 @@ export class DriverDocumentsService {
       );
     }
 
-    const driverProfile = await this.prisma.driverProfile.findUnique({
-      where: { userId: driverUserId },
-    });
-    if (!driverProfile) {
-      throw new NotFoundException('Driver profile not found');
-    }
-
     const existing = await this.prisma.driverDocument.findUnique({
-      where: {
-        driverProfileId_type: { driverProfileId: driverProfile.id, type },
-      },
+      where: { driverApplicationId_type: { driverApplicationId, type } },
     });
 
-    const storageKey = `driver-documents/${driverProfile.id}/${type}-${randomUUID()}${extname(file.originalname)}`;
+    const storageKey = `driver-documents/${driverApplicationId}/${type}-${randomUUID()}${extname(file.originalname)}`;
     await this.storage.save(storageKey, file.buffer);
 
     const document = await this.prisma.driverDocument.upsert({
-      where: {
-        driverProfileId_type: { driverProfileId: driverProfile.id, type },
-      },
+      where: { driverApplicationId_type: { driverApplicationId, type } },
       create: {
-        driverProfileId: driverProfile.id,
+        driverApplicationId,
         type,
         storageKey,
         originalFilename: file.originalname,
@@ -98,40 +85,26 @@ export class DriverDocumentsService {
     return DriverDocumentResponseDto.from(document);
   }
 
-  async listOwn(driverUserId: string) {
-    const driverProfile = await this.prisma.driverProfile.findUnique({
-      where: { userId: driverUserId },
-    });
-    if (!driverProfile) {
-      throw new NotFoundException('Driver profile not found');
-    }
+  /**
+   * An application's documents. Public shape even for admin review — the
+   * storage key is an internal detail, irrelevant to the caller and not
+   * worth exposing; use getFileBuffer(documentId) to fetch content.
+   */
+  async listForApplication(driverApplicationId: string) {
     const documents = await this.prisma.driverDocument.findMany({
-      where: { driverProfileId: driverProfile.id },
+      where: { driverApplicationId },
     });
     return documents.map((d) => DriverDocumentResponseDto.from(d));
   }
 
-  async missingRequiredTypes(
-    driverProfileId: string,
-  ): Promise<DriverDocumentType[]> {
+  async uploadedTypes(
+    driverApplicationId: string,
+  ): Promise<Set<DriverDocumentType>> {
     const documents = await this.prisma.driverDocument.findMany({
-      where: { driverProfileId },
+      where: { driverApplicationId },
       select: { type: true },
     });
-    const uploadedTypes = new Set(documents.map((d) => d.type));
-    return REQUIRED_DOCUMENT_TYPES.filter((t) => !uploadedTypes.has(t));
-  }
-
-  /**
-   * Admin-only: a driver's documents for review. Public shape even here —
-   * the storage key is an internal detail, irrelevant to the caller and
-   * not worth exposing; use getFileBuffer(documentId) to fetch content.
-   */
-  async listForDriverProfile(driverProfileId: string) {
-    const documents = await this.prisma.driverDocument.findMany({
-      where: { driverProfileId },
-    });
-    return documents.map((d) => DriverDocumentResponseDto.from(d));
+    return new Set(documents.map((d) => d.type));
   }
 
   async getFileBuffer(

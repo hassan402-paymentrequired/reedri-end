@@ -17,6 +17,7 @@ import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { DriversModule } from './drivers/drivers.module';
+import { DriverApplicationModule } from './driver-application/driver-application.module';
 import { RideRequestsModule } from './ride-requests/ride-requests.module';
 import { OffersModule } from './offers/offers.module';
 import { TripsModule } from './trips/trips.module';
@@ -71,6 +72,7 @@ import { ResponseEnvelopeInterceptor } from './common/interceptors/response-enve
     AuthModule,
     UsersModule,
     DriversModule,
+    DriverApplicationModule,
     RideRequestsModule,
     OffersModule,
     TripsModule,

@@ -9,10 +9,10 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { Role } from '@prisma/client';
+import { ActiveProfile } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../common/guards/roles.guard';
-import { Roles } from '../common/decorators/roles.decorator';
+import { ActiveProfileGuard } from '../common/guards/active-profile.guard';
+import { RequireProfile } from '../common/decorators/require-profile.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import type { AuthenticatedUser } from '../auth/types/jwt-payload.type';
 import { RideRequestsService } from './ride-requests.service';
@@ -21,12 +21,12 @@ import { CancelRideRequestDto } from './dto/cancel-ride-request.dto';
 
 @ApiTags('ride-requests')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, ActiveProfileGuard)
 @Controller('ride-requests')
 export class RideRequestsController {
   constructor(private readonly rideRequestsService: RideRequestsService) {}
 
-  @Roles(Role.RIDER)
+  @RequireProfile(ActiveProfile.RIDER)
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post()
   create(

@@ -1,17 +1,17 @@
 import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
-import { Role } from '@prisma/client';
+import { ActiveProfile } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../common/guards/roles.guard';
-import { Roles } from '../common/decorators/roles.decorator';
+import { ActiveProfileGuard } from '../common/guards/active-profile.guard';
+import { RequireProfile } from '../common/decorators/require-profile.decorator';
 import { MatchingService } from './matching.service';
 import { NearbyDriversQueryDto } from './dto/nearby-drivers-query.dto';
 import { NearbyDriverResponseDto } from './dto/nearby-driver-response.dto';
 
 @ApiTags('matching')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, ActiveProfileGuard)
 @Controller('matching')
 export class MatchingController {
   constructor(private readonly matchingService: MatchingService) {}
@@ -21,7 +21,7 @@ export class MatchingController {
    * comes from the WS `rider:track:subscribe` event (see RealtimeGateway),
    * not from polling this endpoint.
    */
-  @Roles(Role.RIDER)
+  @RequireProfile(ActiveProfile.RIDER)
   @Throttle({ default: { limit: 30, ttl: 60000 } })
   @Get('nearby-drivers')
   async nearbyDrivers(@Query() query: NearbyDriversQueryDto) {

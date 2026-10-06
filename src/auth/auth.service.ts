@@ -12,7 +12,6 @@ import ms, { type StringValue } from 'ms';
 import { Role } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { UsersService } from '../users/users.service';
-import { DriversService } from '../drivers/drivers.service';
 import { SmsService } from '../common/sms/sms.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -28,7 +27,6 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly usersService: UsersService,
-    private readonly driversService: DriversService,
     private readonly smsService: SmsService,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
@@ -39,32 +37,15 @@ export class AuthService {
     if (existing) {
       throw new ConflictException('Phone number already registered');
     }
-    if (dto.role === Role.DRIVER) {
-      await this.driversService.assertPlateNumberAvailable(dto.plateNumber!);
-    }
 
     const passwordHash = await bcrypt.hash(dto.password, BCRYPT_ROUNDS);
 
-    const user = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.user.create({
-        data: {
-          name: dto.name,
-          phone: dto.phone,
-          password: passwordHash,
-          role: dto.role,
-        },
-      });
-
-      if (dto.role === Role.DRIVER) {
-        await this.driversService.createProfile(tx, {
-          userId: created.id,
-          vehicleMake: dto.vehicleMake!,
-          vehicleModel: dto.vehicleModel!,
-          plateNumber: dto.plateNumber!,
-        });
-      }
-
-      return created;
+    const user = await this.prisma.user.create({
+      data: {
+        name: dto.name,
+        phone: dto.phone,
+        password: passwordHash,
+      },
     });
 
     return this.issueTokenPair(user.id, user.role);
